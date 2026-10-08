@@ -1,7 +1,0 @@
-deployment:
-  tasks:
-    - export DEPLOYPATH=/home/shreecom/public_html/Devops/Om
-    - /bin/cp -R css/ $DEPLOYPATH
-    - /bin/cp -R js/ $DEPLOYPATH
-    - /bin/cp -u *.html $DEPLOYPATH
-
