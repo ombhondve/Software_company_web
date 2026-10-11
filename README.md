@@ -1,98 +1,124 @@
 # Simple Task Management API
 
-A RESTful API for personal task management built with **FastAPI**, **PostgreSQL**, and **JWT** auth.
-Dockerized, tested with pytest (>= 80% coverage), CI/CD via GitHub Actions, deployed to AWS EC2.
+A REST API built with FastAPI, PostgreSQL, SQLAlchemy, and JWT authentication. It includes CRUD endpoints, OpenAPI documentation, Docker configuration, automated tests, and an AWS EC2 deployment workflow.
 
-## Endpoints
+## Features
 
-| Method | Path | Auth | Description |
+- User registration and login with bcrypt password hashing.
+- JWT bearer authentication for protected routes.
+- Per-user task CRUD with ownership checks.
+- PostgreSQL persistence through SQLAlchemy.
+- Interactive OpenAPI docs at `/docs` and schema at `/openapi.json`.
+- Health endpoints at `/health` and `/health/db`.
+- Docker Compose for local development and production.
+- GitHub Actions test, image-build, and deployment workflows.
+
+## API endpoints
+
+| Method | Path | Authentication | Description |
 |---|---|---|---|
-| POST | `/users/register` | no | Create a user (`email`, `password` 8-72 chars) |
-| POST | `/users/login` | no | Returns `{"access_token": "...", "token_type": "bearer"}` |
-| GET | `/tasks` | yes | List the current user's tasks |
-| POST | `/tasks` | yes | Create a task |
-| PUT | `/tasks/{id}` | yes | Update a task |
-| DELETE | `/tasks/{id}` | yes | Delete a task (204) |
-| GET | `/health` | no | Liveness check |
+| POST | `/users/register` | No | Register a user |
+| POST | `/users/login` | No | Obtain a JWT access token |
+| GET | `/tasks` | Bearer token | List your tasks |
+| POST | `/tasks` | Bearer token | Create a task |
+| PUT | `/tasks/{task_id}` | Bearer token | Update one of your tasks |
+| DELETE | `/tasks/{task_id}` | Bearer token | Delete one of your tasks |
+| GET | `/health` | No | Liveness check |
+| GET | `/health/db` | No | Database connectivity check |
 
-Invalid payloads return **400**. Missing/invalid tokens return **401**. Another user's task returns **404**.
-Interactive docs: `/docs` (Swagger, use *Authorize* and paste the token) and `/openapi.json`.
+Invalid request payloads return HTTP 400. Invalid or missing credentials return HTTP 401. A task not owned by the authenticated user returns HTTP 404.
 
 ## Run locally with Docker
 
-```bash
-cp .env.example .env        # edit secrets
-docker compose up --build
-# API: http://localhost:8000/docs
-```
+1. Copy `.env.example` to `.env` and change the secrets.
+2. Start the application and PostgreSQL:
+
+   ```bash
+   docker compose up --build
+   ```
+
+3. Open [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ## Run locally without Docker
 
+Create and activate a virtual environment, then install dependencies:
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
-docker compose up -d db                     # just PostgreSQL
-export DATABASE_URL=postgresql+psycopg2://taskuser:change-me@localhost:5432/taskdb
-export SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+docker compose up -d db
+```
+
+Set `DATABASE_URL` to a PostgreSQL connection string and set a strong random `SECRET_KEY`. Start the API:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-## Tests
+## Run tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest          # uses in-memory SQLite; fails if coverage < 80%
+pytest
 ```
 
-## Quick demo
+The configured pytest coverage gate requires at least 80% coverage.
 
-```bash
-curl -X POST localhost:8000/users/register -H 'Content-Type: application/json' \
-  -d '{"email":"me@example.com","password":"password123"}'
-TOKEN=$(curl -s -X POST localhost:8000/users/login -H 'Content-Type: application/json' \
-  -d '{"email":"me@example.com","password":"password123"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-curl -X POST localhost:8000/tasks -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"Ship it"}'
-curl localhost:8000/tasks -H "Authorization: Bearer $TOKEN"
-```
+## Quick API example
 
-## Deploy to AWS EC2
+Register and log in using `/docs`, then click **Authorize** and paste the returned access token. You can then create and list tasks using the protected endpoints.
 
-1. **Launch EC2**: Amazon Linux 2023, t3.micro/t2.micro. **Security group**: inbound TCP 22 (your IP only) and TCP 80 (0.0.0.0/0). Do not open 5432.
-2. **One-time setup** on the instance:
-   ```bash
-   scp scripts/ec2_setup.sh ec2-user@<EC2_IP>:~
-   ssh ec2-user@<EC2_IP> 'bash ec2_setup.sh'
-   ```
-   This installs Docker + Compose and generates `~/task-api/.env` with random secrets.
-3. **GitHub repo secrets** (Settings > Secrets and variables > Actions):
-   - `EC2_HOST` - public IP or DNS
-   - `EC2_USER` - `ec2-user`
-   - `EC2_SSH_KEY` - contents of the private key (.pem) for the instance
-4. Push to `main`. `.github/workflows/deploy.yml` runs tests, builds and pushes the image to GHCR, then SSHes to EC2 and runs `docker compose up -d`, followed by a `/health` smoke test.
-5. Your deployed API URL: `http://<EC2_IP>/docs`
+## AWS EC2 deployment
 
-`.github/workflows/ci.yml` runs on every push/PR: pytest with the coverage gate, plus a Docker build that fails if the image exceeds 150 MB.
+The deployment workflow is stored at `.github/workflows/deploy.yml`. It runs tests, builds and pushes a container image to GitHub Container Registry, deploys over SSH, and checks the `/health` endpoint.
+
+Required GitHub repository Actions secrets:
+
+- `EC2_HOST`: EC2 public IP address or DNS name.
+- `EC2_USER`: SSH user, typically `ec2-user`.
+- `EC2_SSH_KEY`: private SSH key contents for the instance.
+
+On a fresh Amazon Linux 2023 instance, run `scripts/ec2_setup.sh` as `ec2-user`. The script installs Docker and Compose and creates `~/task-api/.env` with generated secrets. The deployment workflow copies `docker-compose.prod.yml` to `~/task-api`. Do not expose PostgreSQL port 5432 publicly; allow SSH only from trusted IPs and HTTP/HTTPS as needed.
+
+The workflow expects the instance to have Docker available and the deployment directory `~/task-api` prepared. Configure HTTPS and a reverse proxy before using this API for sensitive production traffic.
 
 ## Project layout
 
-```
+```text
 app/
-  main.py        app, logging middleware, 400 validation handler, health
-  config.py      env-based settings
-  database.py    SQLAlchemy engine/session
-  models.py      User, Task
-  schemas.py     Pydantic models
-  security.py    bcrypt hashing, JWT create/verify
-  deps.py        get_current_user dependency
-  routers/       users.py, tasks.py
-tests/           pytest suite (service/security + API integration via httpx TestClient)
-scripts/         ec2_setup.sh, deploy.sh
-Dockerfile       multi-stage, alpine, non-root
-docker-compose.yml / docker-compose.prod.yml
+  main.py
+  config.py
+  database.py
+  models.py
+  schemas.py
+  security.py
+  deps.py
+  routers/
+    __init__.py
+    users.py
+    tasks.py
+tests/
+  conftest.py
+  test_auth.py
+  test_tasks.py
+  test_security.py
+scripts/
+  ec2_setup.sh
+  deploy.sh
+.github/
+  workflows/
+    ci.yml
+    deploy.yml
+Dockerfile
+docker-compose.yml
+docker-compose.prod.yml
+requirements.txt
+requirements-dev.txt
+.env.example
 ```
 
-## Notes
+## Security notes
 
-- Set a strong `SECRET_KEY` in production; the default is for local dev only.
-- Tables are created on startup (`create_all`). For schema changes beyond a demo, add Alembic.
+Use a strong, unique `SECRET_KEY` in production and never commit real credentials. The fallback key in `config.py` is for local development only. Database tables are currently initialized with SQLAlchemy `create_all`; use a migration tool such as Alembic when evolving a production schema.
