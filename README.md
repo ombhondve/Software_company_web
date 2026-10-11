@@ -70,9 +70,11 @@ The configured pytest coverage gate requires at least 80% coverage.
 
 Register and log in using `/docs`, then click **Authorize** and paste the returned access token. You can then create and list tasks using the protected endpoints.
 
-## AWS EC2 deployment
+## Docker and AWS EC2 deployment
 
 The deployment workflow is stored at `.github/workflows/deploy.yml`. It runs tests, builds and pushes a container image to GitHub Container Registry, deploys over SSH, and checks the `/health` endpoint.
+
+Follow [the deployment and evidence guide](docs/DEPLOYMENT.md) for exact validation commands, EC2 setup, GitHub Actions secrets, health checks, and the screenshots needed to demonstrate a real deployment. **The existence of deployment configuration alone is not proof that a live EC2 deployment succeeded.** Capture genuine evidence only after your own deployment passes.
 
 Required GitHub repository Actions secrets:
 
@@ -82,7 +84,7 @@ Required GitHub repository Actions secrets:
 
 On a fresh Amazon Linux 2023 instance, run `scripts/ec2_setup.sh` as `ec2-user`. The script installs Docker and Compose and creates `~/task-api/.env` with generated secrets. The deployment workflow copies `docker-compose.prod.yml` to `~/task-api`. Do not expose PostgreSQL port 5432 publicly; allow SSH only from trusted IPs and HTTP/HTTPS as needed.
 
-The workflow expects the instance to have Docker available and the deployment directory `~/task-api` prepared. Configure HTTPS and a reverse proxy before using this API for sensitive production traffic.
+Before handling real users or sensitive data, configure HTTPS, a domain and reverse proxy or load balancer, restrictive security-group rules, secret rotation, database backups, monitoring, dependency updates, and database migrations (for example Alembic). Keep PostgreSQL private.
 
 ## Project layout
 
@@ -107,6 +109,8 @@ tests/
 scripts/
   ec2_setup.sh
   deploy.sh
+docs/
+  DEPLOYMENT.md
 .github/
   workflows/
     ci.yml
